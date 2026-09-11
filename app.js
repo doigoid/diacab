@@ -1435,6 +1435,11 @@ document.addEventListener('keydown', (ev) => {
   const typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
   const mod = ev.metaKey || ev.ctrlKey;
 
+  if (!$('shareModal').hidden) {                      // the dialog owns the keyboard
+    if (ev.key === 'Escape') { ev.preventDefault(); closeShare(); }
+    return;
+  }
+
   /* preview mode swallows every edit, undo included; only leaving it stays live */
   if (preview) {
     if (!typing && (ev.key === 'Escape' || ev.key.toLowerCase() === 'p')) {
@@ -1532,6 +1537,192 @@ $('btnClear').addEventListener('click', () => {
     for (const r of state.racks) r.devices = [];
     state.selectedId = null;
   });
+});
+
+/* ─────────────────────────── shareable links ─────────────────────────── */
+
+/* The diagram travels inside the URL: JSON → deflate-raw → base64url, tagged with a
+   one-character encoding marker ("1" deflated, "0" plain). No server involved. */
+
+const SHARE_PARAM = 'd';
+const PREVIEW_PARAM = 'preview';
+const URL_COMFORTABLE = 8000;        // chars beyond which some tools start truncating
+
+/** The diagram, with per-type/size defaults stripped so the link stays short.
+    normalize() fills them back in on the way out. */
+function shareDoc() {
+  return {
+    format: 'diacab/3',
+    numberFromTop: state.numberFromTop,
+    racks: state.racks.map((r) => ({
+      name: r.name, u: r.u, maxW: r.maxW, x: r.x, y: r.y,
+      devices: r.devices.map((d) => {
+        const def = POWER[d.type](d.u);
+        const o = { type: d.type, u: d.u, pos: d.pos, label: d.label };
+        if (d.sub) o.sub = d.sub;
+        if (d.color !== TYPES[d.type].color) o.color = d.color;
+        if (d.idle !== def.idle) o.idle = d.idle;
+        if (d.peak !== def.peak) o.peak = d.peak;
+        return o;
+      }),
+    })),
+  };
+}
+
+function bytesToB64url(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 8192) {          // chunked: avoids arg-limit blowups
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  }
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function b64urlToBytes(s) {
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+/** Run `bytes` through a (de)compression stream, entirely in memory — no Blob round-trip. */
+async function pipeBytes(bytes, transform) {
+  const source = new ReadableStream({
+    start(c) { c.enqueue(bytes); c.close(); },
+  });
+  return new Uint8Array(await new Response(source.pipeThrough(transform)).arrayBuffer());
+}
+
+async function encodeShare(doc) {
+  const bytes = new TextEncoder().encode(JSON.stringify(doc));
+  if (typeof CompressionStream === 'undefined') return '0' + bytesToB64url(bytes);
+  return '1' + bytesToB64url(await pipeBytes(bytes, new CompressionStream('deflate-raw')));
+}
+
+async function decodeShare(param) {
+  const tag = param.slice(0, 1);
+  let bytes = b64urlToBytes(param.slice(1));
+  if (tag === '1') {
+    if (typeof DecompressionStream === 'undefined') throw new Error('no DecompressionStream');
+    bytes = await pipeBytes(bytes, new DecompressionStream('deflate-raw'));
+  } else if (tag !== '0') {
+    throw new Error('unknown share encoding');
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+async function buildShareUrl() {
+  const param = await encodeShare(shareDoc());
+  const url = new URL(window.location.href);
+  url.hash = '';
+  url.searchParams.set(SHARE_PARAM, param);
+  if ($('sharePreview').checked) url.searchParams.set(PREVIEW_PARAM, '1');
+  else url.searchParams.delete(PREVIEW_PARAM);
+  return url.toString();
+}
+
+/** Accepts both ?d=… and #d=… so links survive being pasted around. */
+function shareParamFromUrl() {
+  const q = new URLSearchParams(window.location.search).get(SHARE_PARAM);
+  if (q) return q;
+  const hash = window.location.hash.replace(/^#/, '');
+  return new URLSearchParams(hash).get(SHARE_PARAM);
+}
+
+function previewRequestedByUrl() {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  return new URLSearchParams(window.location.search).get(PREVIEW_PARAM) === '1' ||
+         hash.get(PREVIEW_PARAM) === '1';
+}
+
+/** Drop the share params so a reload shows the user's own autosaved work instead. */
+function stripShareParams() {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete(SHARE_PARAM);
+    url.searchParams.delete(PREVIEW_PARAM);
+    url.hash = '';
+    history.replaceState(null, '', url.pathname + (url.search || '') );
+  } catch (_) { /* file:// in some browsers refuses replaceState */ }
+}
+
+/** Load a shared diagram, keeping the user's own one an Undo away. */
+async function applySharedLink(param) {
+  try {
+    const next = normalize(await decodeShare(param));   // throws before state is touched
+    undoStack.push(snapshot());
+    redoStack.length = 0;
+    state = next;
+    bumpUid();
+    save();
+    applyZoom(el.zoom.value);                           // re-fits and renders
+    toast(`Loaded a shared diagram — ${state.racks.length} cabinet(s), ` +
+          `${allDevices().length} device(s). Undo restores yours.`);
+  } catch (_) {
+    toast('That share link could not be read.');
+  } finally {
+    stripShareParams();
+  }
+}
+
+/* ── share dialog ── */
+
+let shareUrlValue = '';
+
+async function refreshShareUrl() {
+  shareUrlValue = await buildShareUrl();
+  $('shareUrl').value = shareUrlValue;
+  $('shareMeta').textContent =
+    `${shareUrlValue.length.toLocaleString()} characters · ` +
+    `${state.racks.length} cabinet(s), ${allDevices().length} device(s)`;
+
+  const warn = $('shareWarn');
+  const notes = [];
+  if (shareUrlValue.length > URL_COMFORTABLE) {
+    notes.push(`This link is long (${shareUrlValue.length.toLocaleString()} characters); ` +
+               `some chat apps and mail clients truncate links past about ` +
+               `${URL_COMFORTABLE.toLocaleString()}. Save JSON instead if it gets mangled.`);
+  }
+  if (window.location.protocol === 'file:') {
+    notes.push('The page is open from a file:// path, so this link only works for people ' +
+               'who have DiaCab at the same path. Serve the folder over HTTP to share it.');
+  }
+  warn.hidden = !notes.length;
+  warn.textContent = notes.join(' ');
+}
+
+async function openShare() {
+  $('shareModal').hidden = false;
+  $('shareUrl').value = 'Building link…';
+  $('shareMeta').textContent = '';
+  await refreshShareUrl();
+  $('shareUrl').focus();
+  $('shareUrl').select();
+}
+
+function closeShare() {
+  $('shareModal').hidden = true;
+}
+
+$('btnShare').addEventListener('click', openShare);
+$('shareClose').addEventListener('click', closeShare);
+$('sharePreview').addEventListener('change', refreshShareUrl);
+$('shareModal').addEventListener('pointerdown', (ev) => {
+  if (ev.target === $('shareModal')) closeShare();       // click the backdrop
+});
+
+$('shareCopy').addEventListener('click', async () => {
+  $('shareUrl').select();
+  try {
+    // a clipboard write can sit unresolved (permission prompts, locked-down contexts),
+    // so never wait on it indefinitely — fall back to "select and press ⌘C"
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500));
+    await Promise.race([navigator.clipboard.writeText(shareUrlValue), timeout]);
+    toast('Share link copied to the clipboard.');
+    closeShare();
+  } catch (_) {
+    toast('Copying was blocked — the link is selected, press ⌘C.');
+  }
 });
 
 /* ── SVG rendering, used for both SVG and PNG export ── */
@@ -1721,3 +1912,8 @@ undoStack.length = 0;
 redoStack.length = 0;
 el.btnUndo.disabled = true;
 el.btnRedo.disabled = true;
+
+/* a shared link wins over the autosaved diagram, but only for this visit */
+const sharedParam = shareParamFromUrl();
+if (previewRequestedByUrl()) setPreview(true);
+if (sharedParam) applySharedLink(sharedParam);

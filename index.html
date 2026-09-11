@@ -21,6 +21,8 @@
     <button id="btnUndo" class="btn" title="Undo (⌘Z)">Undo</button>
     <button id="btnRedo" class="btn" title="Redo (⇧⌘Z)">Redo</button>
     <span class="sep"></span>
+    <button id="btnShare" class="btn btn-accent">Share link</button>
+    <span class="sep"></span>
     <button id="btnExportSvg" class="btn">Export SVG</button>
     <button id="btnExportPng" class="btn">Export PNG</button>
     <button id="btnSaveJson" class="btn">Save JSON</button>
@@ -157,6 +159,27 @@
 </main>
 
 <button id="btnExitPreview" class="exit-preview" hidden>Exit preview · Esc</button>
+
+<div class="modal" id="shareModal" hidden>
+  <div class="modal-card" role="dialog" aria-labelledby="shareTitle" aria-modal="true">
+    <div class="modal-head">
+      <h2 id="shareTitle">Shareable link</h2>
+      <button class="modal-x" id="shareClose" title="Close (Esc)">×</button>
+    </div>
+    <p class="modal-note">The whole diagram is packed into the link itself — no server,
+      no account. Anyone who opens it gets this canvas.</p>
+    <input type="text" id="shareUrl" readonly spellcheck="false">
+    <label class="field field-row">
+      <input type="checkbox" id="sharePreview">
+      <span>Open in preview mode (controls hidden)</span>
+    </label>
+    <div class="btn-row">
+      <button class="btn btn-accent" id="shareCopy">Copy link</button>
+    </div>
+    <p class="modal-note" id="shareMeta"></p>
+    <p class="modal-note modal-warn" id="shareWarn" hidden></p>
+  </div>
+</div>
 
 <div class="toast" id="toast" hidden></div>
 

@@ -100,6 +100,31 @@ its limit is still placed, but the cabinet's footer and stats row turn red and a
 names the overage. Space in U remains a hard constraint — overlapping drops are always
 rejected.
 
+## Shareable links
+
+**Share link** packs the whole diagram into a URL — `?d=<payload>` — so opening that link
+reproduces the canvas exactly. There is no server and no account: the JSON is minified
+(per-type defaults stripped), deflate-compressed, and base64url-encoded into the query
+string. A two-cabinet, eleven-device diagram comes out around 460 characters.
+
+The dialog shows the link, its length, and a **Open in preview mode** option that adds
+`&preview=1` so recipients land on a read-only canvas. It warns when a link grows past
+~8,000 characters (some chat and mail clients truncate beyond that — send the JSON
+instead), and when the page itself is open from a `file://` path, since such a link only
+works for people who have DiaCab at the same path. Serve the folder over HTTP to share
+properly.
+
+Opening a shared link:
+
+- replaces whatever diagram you had, but pushes it onto the undo stack first, so **Undo
+  gets your own work back** (Redo returns to the shared one);
+- strips `d` and `preview` from the address bar afterwards, so a later reload shows your
+  autosaved diagram rather than silently reverting your edits to the shared snapshot;
+- reports a bad or truncated payload and leaves your diagram untouched.
+
+`#d=<payload>` is accepted as well as `?d=`, so links survive being pasted into tools that
+prefer fragments.
+
 ## Saving and export
 
 The diagram autosaves to `localStorage` on every change, so a reload picks up where you
@@ -121,7 +146,7 @@ left off.
 |------|----------|
 | `index.html` | layout: palette, stage, inspector |
 | `styles.css` | dark theme; `--uh` is the pixel height of one rack unit, `--grid` the canvas step |
-| `app.js` | state, drag-and-drop, undo/redo, persistence, SVG/PNG export |
+| `app.js` | state, drag-and-drop, undo/redo, persistence, share links, SVG/PNG export |
 
 State lives in `state`:
 
