@@ -17,6 +17,35 @@
 
 * { box-sizing: border-box; }
 
+/* ───────── scrollbars ─────────
+   Chrome/Safari/Edge: transparent track and corner, with a faint thumb that only firms
+   up on hover, so a scrolled panel never shows a pale bar against the dark theme.
+   `background-clip: content-box` over a transparent border is what insets the thumb. */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+  background: transparent;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-track-piece,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(230, 237, 243, .14);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(230, 237, 243, .28); background-clip: content-box; }
+::-webkit-scrollbar-thumb:active { background: rgba(230, 237, 243, .38); background-clip: content-box; }
+::-webkit-scrollbar-button { display: none; }
+
+/* Firefox, which ignores the pseudo-elements above */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: rgba(230, 237, 243, .22) transparent; }
+}
+
 html, body {
   height: 100%;
   margin: 0;
