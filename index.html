@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DiaCab — Server Cabinet Diagram Builder</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">▦</span>
+    <span class="brand-name">DiaCab</span>
+    <span class="brand-sub">cabinet diagram builder</span>
+  </div>
+  <div class="topbar-actions">
+    <button id="btnAddCab" class="btn btn-accent">+ Cabinet</button>
+    <button id="btnPreview" class="btn" title="Preview mode — hide all controls (P)">Preview</button>
+    <span class="sep"></span>
+    <button id="btnUndo" class="btn" title="Undo (⌘Z)">Undo</button>
+    <button id="btnRedo" class="btn" title="Redo (⇧⌘Z)">Redo</button>
+    <span class="sep"></span>
+    <button id="btnExportSvg" class="btn">Export SVG</button>
+    <button id="btnExportPng" class="btn">Export PNG</button>
+    <button id="btnSaveJson" class="btn">Save JSON</button>
+    <button id="btnLoadJson" class="btn">Load JSON</button>
+    <input type="file" id="fileInput" accept="application/json,.json" hidden>
+    <span class="sep"></span>
+    <button id="btnClear" class="btn btn-danger">Clear</button>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ───────────── Palette ───────────── -->
+  <aside class="panel panel-left">
+    <h2 class="panel-title">Shapes</h2>
+    <p class="hint">Drag into a cabinet, or click to drop in the active cabinet's lowest
+      free slot.</p>
+
+    <h3 class="group-title">Servers</h3>
+    <div class="palette" id="paletteServers"></div>
+
+    <h3 class="group-title">Switches</h3>
+    <div class="palette" id="paletteSwitches"></div>
+
+    <h3 class="group-title">Firewalls</h3>
+    <div class="palette" id="paletteFirewalls"></div>
+
+    <h3 class="group-title">Active cabinet</h3>
+    <label class="field">
+      <span>Name</span>
+      <input type="text" id="cabName" maxlength="40" placeholder="Cabinet name">
+    </label>
+    <label class="field">
+      <span>Height (U)</span>
+      <input type="number" id="cabU" min="4" max="60" step="1">
+    </label>
+    <label class="field">
+      <span>Max power (W) — 0 for no limit</span>
+      <input type="number" id="cabW" min="0" max="100000" step="100">
+    </label>
+    <div class="btn-row">
+      <button id="btnDupCab" class="btn">Duplicate</button>
+      <button id="btnDelCab" class="btn btn-danger">Delete</button>
+    </div>
+    <p class="hint">Drag a cabinet by its header to place it on the grid. Drag the empty
+      canvas to pan.</p>
+
+    <h3 class="group-title">Diagram</h3>
+    <div class="btn-row">
+      <button id="btnArrange" class="btn" title="Lay the cabinets out in a tidy row">Arrange in a row</button>
+    </div>
+    <label class="field field-row">
+      <input type="checkbox" id="numTop">
+      <span>Number U from top</span>
+    </label>
+    <label class="field">
+      <span>Zoom</span>
+      <select id="zoom">
+        <option value="fit">Fit to window</option>
+        <option value="16">Compact</option>
+        <option value="22">Small</option>
+        <option value="26">Normal</option>
+        <option value="34">Large</option>
+      </select>
+    </label>
+  </aside>
+
+  <!-- ───────────── Canvas ───────────── -->
+  <section class="stage" id="stage">
+    <div class="canvas" id="canvas"></div>
+  </section>
+
+  <!-- ───────────── Inspector ───────────── -->
+  <aside class="panel panel-right">
+    <h2 class="panel-title">Properties</h2>
+
+    <div id="inspectorEmpty" class="empty">
+      Nothing selected.<br><br>
+      <b>Double-click</b> a shape — or a cabinet's name — to rename it in place.<br>
+      <b>↑ ↓</b> move, <b>← →</b> change cabinet, <b>⌫</b> delete, <b>⌘D</b> duplicate.
+    </div>
+
+    <div id="inspector" hidden>
+      <label class="field">
+        <span>Label</span>
+        <input type="text" id="fLabel" maxlength="60">
+      </label>
+      <label class="field">
+        <span>Sub-label</span>
+        <input type="text" id="fSub" maxlength="60" placeholder="model / IP / owner">
+      </label>
+      <div class="field">
+        <span>Power draw (W) — idle to peak</span>
+        <div class="dual">
+          <input type="number" id="fIdle" min="0" max="30000" step="10" placeholder="idle"
+                 title="Idle / typical draw">
+          <input type="number" id="fPeak" min="0" max="30000" step="10" placeholder="peak"
+                 title="Peak / maximum draw">
+        </div>
+      </div>
+      <label class="field">
+        <span>Cabinet</span>
+        <select id="fCab"></select>
+      </label>
+      <label class="field">
+        <span>Type</span>
+        <select id="fType">
+          <option value="server">Server</option>
+          <option value="switch">Switch</option>
+          <option value="firewall">Firewall</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Height (U)</span>
+        <select id="fHeight"></select>
+      </label>
+      <label class="field">
+        <span>Bottom position (U)</span>
+        <input type="number" id="fPos" min="1" step="1">
+      </label>
+      <div class="field">
+        <span>Color</span>
+        <div class="swatches" id="fSwatches"></div>
+      </div>
+      <div class="btn-row">
+        <button id="btnDup" class="btn">Duplicate</button>
+        <button id="btnDel" class="btn btn-danger">Delete</button>
+      </div>
+    </div>
+
+    <h3 class="group-title">Occupancy</h3>
+    <div class="stats" id="stats"></div>
+  </aside>
+</main>
+
+<button id="btnExitPreview" class="exit-preview" hidden>Exit preview · Esc</button>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
